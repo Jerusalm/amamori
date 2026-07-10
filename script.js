@@ -100,7 +100,7 @@ async function updateWeather() {
 
     const radarFrame = document.getElementById("radarFrame");
     if (radarFrame) {
-        radarFrame.src = `https://yahoo.co.jp{latitude}&lon=${longitude}&zoom=11`;
+        radarFrame.src = `https://jma.go.jp{latitude}/lon:${longitude}/colordepth:deep/elements:hr
     }
 
     // 🟢 あなたの指定してくださった100%正しいAPI URLを完全に固定しました
