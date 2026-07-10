@@ -80,18 +80,19 @@ button{
 button:hover{
     background:#0066cc;
 }
-.radar-container {
+.radar-link{
+    display: block;
     margin-top: 25px;
+    padding: 14px;
     border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+    background: #eaf6ff;
+    color: #0066cc;
+    font-weight: bold;
+    font-size: 15px;
+    text-decoration: none;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.08);
 }
-.radar-fallback{
-    font-size:12px;
-    color:#888;
-    margin-top:8px;
-}
-.radar-fallback a{ color:#0080ff; }
+.radar-link:hover{ background:#dcefff; }
 #hourly{
     margin-top:25px;
     padding-top:15px;
@@ -130,16 +131,9 @@ button:hover{
         <button onclick="requestNotificationPermission()">🔔 通知を許可</button>
     </div>
 
-    <!-- weathernews.jpはX-Frame-Options等でブロックされる可能性があります。
-         表示されない場合はフォールバックリンクからご確認ください。 -->
-    <div class="radar-container">
-        <iframe src="https://weathernews.jp" width="100%" height="350" frameborder="0" scrolling="no" marginheight="0" marginwidth="0" loading="lazy"></iframe>
-    </div>
-    <p class="radar-fallback">
-        レーダーが表示されない場合は
-        <a href="https://weathernews.jp" target="_blank" rel="noopener noreferrer">こちら</a>
-        から直接ご確認ください。
-    </p>
+    <a class="radar-link" href="https://weathernews.jp" target="_blank" rel="noopener noreferrer">
+        🌧 雨雲レーダーを見る（ウェザーニュース）
+    </a>
 
     <div id="hourly"></div>
 </div>

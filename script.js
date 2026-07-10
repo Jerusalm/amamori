@@ -287,13 +287,18 @@ function analyzeRainTimeline(now, times, rain) {
             probability: Math.round(currentProb)
         };
     } else {
-        // データの終了時刻まで、1分ずつ先を探して雨が始まるタイミングを探す
+        // 「あと○分で雨」は直近24時間以内の予報に限定する
+        // （Open-Meteoはforecast_days未指定だと最大7日先まで返すため、
+        //   無制限にすると「あと2989分」のような実用的でない表示になる）
+        const LOOKAHEAD_LIMIT_MS = 24 * 60 * 60000;
+        const lookaheadEndMs = Math.min(dataEndMs, nowMs + LOOKAHEAD_LIMIT_MS);
+
         let minutesAhead = 0;
         while (true) {
             minutesAhead++;
             const checkMs = nowMs + minutesAhead * 60000;
-            if (checkMs > dataEndMs) {
-                minutesAhead = null; // 予報範囲外＝見つからず
+            if (checkMs > lookaheadEndMs) {
+                minutesAhead = null; // 24時間以内には見つからず
                 break;
             }
             const p = getInterpolatedRainProbability(new Date(checkMs), times, rain);
