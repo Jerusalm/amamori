@@ -19,7 +19,7 @@ function requestNotificationPermission() {
     if ('Notification' in window) {
         Notification.requestPermission().then(permission => {
             if (permission === 'granted') {
-                alert('🔔 通知が許可されました！バックグラウンドでも動作します。');
+                alert('🔔 通知が許可されました！');
             }
         });
     }
@@ -27,7 +27,6 @@ function requestNotificationPermission() {
 
 // 📱 バイブレーションと音声の統合アラート
 function playAlertNotification(message) {
-    // 1. 音声再生
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -38,18 +37,16 @@ function playAlertNotification(message) {
     osc.start();
     setTimeout(() => { osc.stop(); ctx.close(); }, 300);
 
-    // 2. スマホのバイブレーション（PWA/Android対応）
     if ("vibrate" in navigator) {
-        navigator.vibrate([200, 100, 200]);
+        navigator.vibrate();
     }
 
-    // 3. PWA用バックグラウンド通知のトリガー（Service Worker経由）
     if ('Notification' in window && Notification.permission === 'granted') {
         navigator.serviceWorker.ready.then(registration => {
             registration.showNotification('☔ 雨守アラート', {
                 body: message || '雨予報を検知しました。',
                 icon: 'https://flaticon.com',
-                vibrate: [200, 100, 200]
+                vibrate:
             });
         });
     }
@@ -57,6 +54,28 @@ function playAlertNotification(message) {
 
 function playAlertSound() {
     playAlertNotification("テスト通知が正常に動作しています。");
+}
+
+// 位置情報を取得するコア関数
+function initLocation() {
+    document.getElementById("location").textContent = "📍現在地取得中...";
+
+    navigator.geolocation.getCurrentPosition(
+        function (pos) {
+            latitude = pos.coords.latitude;
+            longitude = pos.coords.longitude;
+            updateWeather();
+            
+            if (weatherInterval) clearInterval(weatherInterval);
+            weatherInterval = setInterval(updateWeather, 600000); // 10分ごとにAPI更新
+        },
+        function (error) {
+            console.error("位置情報エラー:", error);
+            document.getElementById("location").textContent = "📍位置情報が未許可です";
+            alert("雨守アプリの位置情報アクセスが許可されていません。\nアプリ画面、またはiPhoneの「設定」＞「プライバシーとセキュリティ」＞「位置情報サービス」から、位置情報を「使用中のみ許可」にしてください。");
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
 }
 
 // メイン天気更新処理
@@ -67,13 +86,11 @@ async function updateWeather() {
     const status = document.getElementById("updateStatus");
     if (status) status.textContent = "🔄 更新中...";
 
-    // 🗺 雨雲レーダーを現在地の座標に自動更新して連動
     const radarUrl = `https://yahoo.co.jp{latitude}&lon=${longitude}&zoom=11`;
     document.getElementById("radarFrame").src = radarUrl;
 
-    // 「○分前から雨」を正確に割り出すため past_days=1 を付与
-    const url =
-`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&hourly=precipitation_probability&timezone=auto&past_days=1`;
+    // 🟢 あなたが指定してくださった100%正しいAPI URLです
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&hourly=precipitation_probability&timezone=auto&past_days=1`;
 
     try {
         const response = await fetch(url);
@@ -92,13 +109,11 @@ async function updateWeather() {
 
         if (countdownInterval) clearInterval(countdownInterval);
 
-        // 1分間隔のリアルタイム高精度演算ループ
         function updateCountdowns() {
             const now = new Date();
             const currentProb = getInterpolatedRainProbability(now, times, rain);
             document.getElementById("rain").textContent = "現在の降水確率：" + Math.round(currentProb) + "%";
 
-            // 境界時間を探すタイムライン解析（3番の機能）
             let info = analyzeRainTimeline(now, times, rain);
 
             const alertEl = document.getElementById("rainAlert");
@@ -106,7 +121,6 @@ async function updateWeather() {
             const warningEl = document.getElementById("warning");
 
             if (info.isRainingNow) {
-                // 【⏰ 3. ○分前から雨 の表示】
                 alertEl.textContent = `🚨 雨が降っています (${info.probability}%)`;
                 alertEl.style.color = "red";
                 timeEl.textContent = `${info.minutes}分前から雨が降っています`;
@@ -119,7 +133,6 @@ async function updateWeather() {
                 lastRainState = true;
 
             } else if (info.upcomingRain) {
-                // 【あと○分で雨 の表示】
                 alertEl.textContent = `⚠️ 雨が近づいています (${info.probability}%)`;
                 alertEl.style.color = "#ff6600";
                 timeEl.textContent = `あと ${info.minutes} 分で雨が降る予報です`;
@@ -132,7 +145,6 @@ async function updateWeather() {
                 lastRainState = true;
 
             } else {
-                // 【雨は止みました の表示】
                 hasAlerted = false;
                 alertEl.style.color = "green";
                 timeEl.textContent = "";
@@ -153,7 +165,6 @@ async function updateWeather() {
                 lastRainState = false;
             }
 
-            // 6時間予報の構築
             let html = "<h3>これから6時間</h3>";
             let currentIndex = times.findIndex(t => new Date(t) >= now);
             if (currentIndex === -1) currentIndex = 0;
@@ -172,7 +183,7 @@ async function updateWeather() {
         }
 
         updateCountdowns();
-        countdownInterval = setInterval(updateCountdowns, 60000); // 1分ごとの描画更新
+        countdownInterval = setInterval(updateCountdowns, 60000);
 
         document.getElementById("location").textContent = "📍現在地";
         if (status) {
@@ -187,7 +198,6 @@ async function updateWeather() {
     }
 }
 
-// 線形補間関数
 function getInterpolatedRainProbability(targetDate, times, rain) {
     const targetMs = targetDate.getTime();
     for (let i = 0; i < times.length - 1; i++) {
@@ -202,11 +212,9 @@ function getInterpolatedRainProbability(targetDate, times, rain) {
     return 0;
 }
 
-// 過去・未来のタイムライン解析
 function analyzeRainTimeline(now, times, rain) {
     const nowMs = now.getTime();
     let timeline = [];
-    // 過去60分前から未来360分後までを1分単位でスキャン
     for (let min = -60; min <= 360; min++) {
         const simDate = new Date(nowMs + min * 60000);
         const prob = getInterpolatedRainProbability(simDate, times, rain);
@@ -216,7 +224,6 @@ function analyzeRainTimeline(now, times, rain) {
     const currentProb = timeline.find(t => t.diffMinutes === 0).prob;
 
     if (currentProb >= 50) {
-        // 現在50%以上（雨）の場合、過去に向かって「最初に50%を跨いだ時間」を逆算
         let startMin = 0;
         for (let min = 0; min >= -60; min--) {
             const item = timeline.find(t => t.diffMinutes === min);
@@ -228,7 +235,6 @@ function analyzeRainTimeline(now, times, rain) {
         }
         return { isRainingNow: true, upcomingRain: false, minutes: Math.abs(startMin), probability: Math.round(currentProb) };
     } else {
-        // 現在50%未満の場合、未来に向かって「最初に50%を超える時間」を算出
         const match = timeline.find(t => t.diffMinutes > 0 && t.prob >= 50);
         if (match) {
             return { isRainingNow: false, upcomingRain: true, minutes: match.diffMinutes, probability: Math.round(match.prob) };
@@ -237,16 +243,5 @@ function analyzeRainTimeline(now, times, rain) {
     return { isRainingNow: false, upcomingRain: false, minutes: 0, probability: Math.round(currentProb) };
 }
 
-// 位置情報トリガー（API読み込みは10分に1回、画面処理は1分に1回）
-navigator.geolocation.getCurrentPosition(
-    function (pos) {
-        latitude = pos.coords.latitude;
-        longitude = pos.coords.longitude;
-        updateWeather();
-        if (weatherInterval) clearInterval(weatherInterval);
-        weatherInterval = setInterval(updateWeather, 600000);
-    },
-    function () {
-        console.log("位置情報を許可してください。");
-    }
-);
+// 最初の起動トリガーを実行
+initLocation();
