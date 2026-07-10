@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+
+<title>☔ 雨守</title>
+
+<style>
+body{
+    font-family:sans-serif;
+    background:#eaf6ff;
+    text-align:center;
+    margin:0;
+    padding:20px;
+}
+
+.weather{
+    max-width:400px;
+    margin:auto;
+    background:white;
+    border-radius:20px;
+    padding:20px;
+    box-shadow:0 5px 15px rgba(0,0,0,.2);
+}
+
+.temperature{
+    font-size:48px;
+    font-weight:bold;
+    margin:15px 0;
+}
+
+#rainAlert{
+    font-size:22px;
+    font-weight:bold;
+}
+
+#updateStatus{
+    color:#0066cc;
+    font-weight:bold;
+    height:24px;
+    margin:10px 0;
+}
+
+button{
+    padding:10px 20px;
+    border:none;
+    background:#0080ff;
+    color:white;
+    border-radius:8px;
+    cursor:pointer;
+    margin-top:10px;
+    font-size:16px;
+}
+
+button:hover{
+    background:#0066cc;
+}
+
+#hourly{
+    margin-top:20px;
+}
+
+#hourly p{
+    margin:5px;
+}
+</style>
+
+</head>
+
+<body>
+
+<h1>☔ 雨守</h1>
+
+<div class="weather">
+
+<p id="location">📍現在地取得中...</p>
+
+<div id="temperature" class="temperature">--℃</div>
+
+<p id="weather">取得中...</p>
+
+<p id="rain">降水確率：--%</p>
+
+<p id="rainAlert"></p>
+
+<p id="rainTime"></p>
+
+<p id="warning"></p>
+
+<p id="updateStatus"></p>
+
+<button onclick="playAlertSound()">
+🔊 音をテスト
+</button>
+
+<div id="hourly"></div>
+
+</div>
+
+<script src="script.js"></script>
+
+</body>
+</html>
