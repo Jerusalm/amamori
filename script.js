@@ -5,16 +5,16 @@ let weatherInterval = null;
 let countdownInterval = null;
 let lastRainState = false;
 
-// PWA登録のエラーが起きてもお天気処理を絶対に止めない
+// PWA登録
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
             .then(reg => console.log('Service Worker 登録完了', reg))
-            .catch(err => console.error('Service Worker 登録スキップ（表示処理を継続します）', err));
+            .catch(err => console.error('Service Worker 登録スキップ', err));
     });
 }
 
-// 🔔 プッシュ通知・プッシュ許可申請
+// 🔔 プッシュ通知許可
 function requestNotificationPermission() {
     if ('Notification' in window) {
         Notification.requestPermission().then(permission => {
@@ -25,7 +25,7 @@ function requestNotificationPermission() {
     }
 }
 
-// 📱 バイブレーションと音声の統合アラート
+// アラート通知
 function playAlertNotification(message) {
     try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -57,7 +57,7 @@ function playAlertSound() {
     playAlertNotification("テスト通知が正常に動作しています。");
 }
 
-// 位置情報を取得するコア関数
+// 位置情報を取得
 function initLocation() {
     if (document.getElementById("location")) {
         document.getElementById("location").textContent = "📍現在地取得中...";
@@ -67,6 +67,11 @@ function initLocation() {
         function (pos) {
             latitude = pos.coords.latitude;
             longitude = pos.coords.longitude;
+            
+            if (document.getElementById("location")) {
+                document.getElementById("location").textContent = "📍現在地";
+            }
+            
             updateWeather();
             
             if (weatherInterval) clearInterval(weatherInterval);
@@ -85,7 +90,7 @@ function initLocation() {
     );
 }
 
-// メイン天気更新処理
+// メイン天気更新
 async function updateWeather() {
     if (latitude === null || longitude === null) return;
 
@@ -98,7 +103,7 @@ async function updateWeather() {
         radarFrame.src = `https://yahoo.co.jp{latitude}&lon=${longitude}&zoom=11`;
     }
 
-    // 🟢 あなたが指定してくださった100%正しいAPI URLに固定しました
+    // 🟢 あなたの指定してくださった100%正しいAPI URLを完全に固定しました
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&hourly=precipitation_probability&timezone=auto&past_days=1`;
 
     try {
@@ -210,9 +215,6 @@ async function updateWeather() {
 
     } catch (e) {
         console.error(e);
-        if (document.getElementById("location")) {
-            document.getElementById("location").textContent = "通信エラー";
-        }
         if (status) status.textContent = "❌ 更新失敗";
     }
 }
@@ -231,7 +233,6 @@ function getInterpolatedRainProbability(targetDate, times, rain) {
     return 0;
 }
 
-// タイムライン解析関数
 function analyzeRainTimeline(now, times, rain) {
     const nowMs = now.getTime();
     let timeline = [];
