@@ -1,11 +1,19 @@
 let latitude = null;
 let longitude = null;
-let hasAlerted = false;
+let hasAlertedImminent = false; // 「あと○分で雨」の直前アラートを鳴らしたか
+let hasAlertedStarted = false;  // 「雨が降り始めた」アラートを鳴らしたか
 let weatherInterval = null;
 let countdownInterval = null;
 let lastRainState = false;
 
-const RAIN_THRESHOLD = 50; // 降水確率(%) これ以上を「雨」とみなす
+const RAIN_THRESHOLD = 50;   // 降水確率(%) これ以上を「雨」とみなす
+const ALERT_LEAD_MINUTES = 5; // 雨が降り出す何分前にアラートを鳴らすか
+
+// ↓↓↓ Cloudflare Workerをデプロイしたら、この3つを書き換えてください ↓↓↓
+const WORKER_URL = "https://amamori-push-worker.jerusalm.workers.dev";
+const VAPID_PUBLIC_KEY = "BJE59toyWxRwVx9CvEAN3_7GCf39rjZLfguavCmdroCUM7waG4ON_GobLyrXNoV8swiFiBMZ3Qaz1Z63gaXexy0";
+const REGISTER_SECRET = "BRrgFE3kKgjDLeYZayauIJPlvsag1gpN";
+// ↑↑↑ ここまで ↑↑↑
 
 // PWA登録
 if ('serviceWorker' in navigator) {
@@ -22,8 +30,71 @@ function requestNotificationPermission() {
         Notification.requestPermission().then(permission => {
             if (permission === 'granted') {
                 alert('🔔 通知が許可されました！');
+                subscribeToPush(); // 許可されたらバックグラウンド購読も開始
             }
         });
+    }
+}
+
+// Base64URL文字列をpushManager.subscribeが要求するUint8Arrayに変換
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; i++) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
+
+// アプリを閉じていても届く「バックグラウンドプッシュ」の購読処理
+async function subscribeToPush() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    if (latitude === null || longitude === null) return;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    if (VAPID_PUBLIC_KEY === 'YOUR_VAPID_PUBLIC_KEY_HERE') {
+        console.warn('VAPID_PUBLIC_KEYが未設定のため、バックグラウンド通知は無効です。');
+        return;
+    }
+
+    try {
+        const registration = await navigator.serviceWorker.ready;
+        let subscription = await registration.pushManager.getSubscription();
+
+        if (!subscription) {
+            subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+            });
+        }
+
+        await registerWithWorker(subscription);
+    } catch (e) {
+        console.error('プッシュ購読エラー:', e);
+    }
+}
+
+// 購読情報と現在地をCloudflare Workerに送って保存してもらう
+async function registerWithWorker(subscription) {
+    try {
+        const res = await fetch(`${WORKER_URL}/register`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Register-Secret': REGISTER_SECRET
+            },
+            body: JSON.stringify({
+                subscription: subscription.toJSON(),
+                latitude,
+                longitude
+            })
+        });
+        if (!res.ok) {
+            console.error('サーバーへの登録に失敗:', res.status);
+        }
+    } catch (e) {
+        console.error('サーバーへの登録エラー:', e);
     }
 }
 
@@ -74,6 +145,8 @@ function initLocation() {
             if (document.getElementById("location")) {
                 document.getElementById("location").textContent = "📍現在地";
             }
+
+            subscribeToPush(); // 既に通知許可済みなら、最新の位置で購読/再登録する
 
             updateWeather();
 
@@ -164,12 +237,15 @@ async function updateWeather() {
                     alertEl.textContent = `🚨 雨が降っています (${info.probability}%)`;
                     alertEl.style.color = "red";
                     timeEl.textContent = `${info.minutes}分前から雨が降っています`;
-                    warningEl.textContent = "☂ 傘を差しましょう";
+                    warningEl.textContent = "☂ 洗濯物を取り込みましょう";
 
-                    if (!hasAlerted) {
-                        playAlertNotification(`${info.minutes}分前から雨が降り始めています！`);
-                        hasAlerted = true;
+                    // 5分前アラートを取りこぼした場合の保険として、
+                    // 実際に降り始めたタイミングでも一度だけ鳴らす
+                    if (!hasAlertedStarted) {
+                        playAlertNotification(`雨が降り始めました！洗濯物を取り込んでください`);
+                        hasAlertedStarted = true;
                     }
+                    hasAlertedImminent = false; // 次回のために解除
                     lastRainState = true;
                 } else if (info.upcomingRain) {
                     alertEl.textContent = `⚠️ 雨が近づいています (${info.probability}%)`;
@@ -177,13 +253,16 @@ async function updateWeather() {
                     timeEl.textContent = `あと ${info.minutes} 分で雨が降る予報です`;
                     warningEl.textContent = "☂ 傘を持って行きましょう";
 
-                    if (!hasAlerted) {
-                        playAlertNotification(`あと ${info.minutes} 分で雨が降る予報です！`);
-                        hasAlerted = true;
+                    // あと5分以内に迫った時だけアラートを鳴らす
+                    if (info.minutes <= ALERT_LEAD_MINUTES && !hasAlertedImminent) {
+                        playAlertNotification(`あと${info.minutes}分で雨が降りそうです！洗濯物を取り込んでください`);
+                        hasAlertedImminent = true;
                     }
+                    hasAlertedStarted = false; // 次回のために解除
                     lastRainState = true;
                 } else {
-                    hasAlerted = false;
+                    hasAlertedImminent = false;
+                    hasAlertedStarted = false;
                     alertEl.style.color = "green";
                     timeEl.textContent = "";
 
@@ -191,7 +270,7 @@ async function updateWeather() {
                         alertEl.textContent = "✨ 雨は止みました";
                         warningEl.textContent = "もう安心です";
                         setTimeout(() => {
-                            if (!hasAlerted && alertEl.textContent === "✨ 雨は止みました") {
+                            if (alertEl.textContent === "✨ 雨は止みました") {
                                 alertEl.textContent = "✅ 雨の心配はありません";
                                 warningEl.textContent = "今日は安心です";
                             }
