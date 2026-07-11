@@ -189,6 +189,14 @@ function hourlyIcon(code, prob) {
     return "☀️";
 }
 
+// 分数を「○時間○分」形式に整形する
+function formatMinutes(min) {
+    if (min < 60) return `${min}分`;
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return m === 0 ? `${h}時間` : `${h}時間${m}分`;
+}
+
 // メイン天気更新
 async function updateWeather() {
     if (latitude === null || longitude === null) return;
@@ -236,7 +244,7 @@ async function updateWeather() {
                 if (info.isRainingNow) {
                     alertEl.textContent = `🚨 雨が降っています (${info.probability}%)`;
                     alertEl.style.color = "red";
-                    timeEl.textContent = `${info.minutes}分前から雨が降っています`;
+                    timeEl.textContent = `${formatMinutes(info.minutes)}前から雨が降っています`;
                     warningEl.textContent = "☂ 洗濯物を取り込みましょう";
 
                     // 5分前アラートを取りこぼした場合の保険として、
@@ -250,7 +258,7 @@ async function updateWeather() {
                 } else if (info.upcomingRain) {
                     alertEl.textContent = `⚠️ 雨が近づいています (${info.probability}%)`;
                     alertEl.style.color = "#ff6600";
-                    timeEl.textContent = `あと ${info.minutes} 分で雨が降る予報です`;
+                    timeEl.textContent = `あと ${formatMinutes(info.minutes)} で雨が降る予報です`;
                     warningEl.textContent = "☂ 傘を持って行きましょう";
 
                     // あと5分以内に迫った時だけアラートを鳴らす
@@ -366,10 +374,9 @@ function analyzeRainTimeline(now, times, rain) {
             probability: Math.round(currentProb)
         };
     } else {
-        // 「あと○分で雨」は直近24時間以内の予報に限定する
-        // （Open-Meteoはforecast_days未指定だと最大7日先まで返すため、
-        //   無制限にすると「あと2989分」のような実用的でない表示になる）
-        const LOOKAHEAD_LIMIT_MS = 24 * 60 * 60000;
+        // 「あと○分で雨」は直近2時間以内の予報に限定する
+        // （それより先の予報はまだ不確実な上、実用的でないため対象外とする）
+        const LOOKAHEAD_LIMIT_MS = 2 * 60 * 60000;
         const lookaheadEndMs = Math.min(dataEndMs, nowMs + LOOKAHEAD_LIMIT_MS);
 
         let minutesAhead = 0;
@@ -377,7 +384,7 @@ function analyzeRainTimeline(now, times, rain) {
             minutesAhead++;
             const checkMs = nowMs + minutesAhead * 60000;
             if (checkMs > lookaheadEndMs) {
-                minutesAhead = null; // 24時間以内には見つからず
+                minutesAhead = null; // 2時間以内には見つからず
                 break;
             }
             const p = getInterpolatedRainProbability(new Date(checkMs), times, rain);
