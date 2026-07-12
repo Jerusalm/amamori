@@ -68,24 +68,39 @@ export default {
 
 async function checkRainAndNotify(env) {
   const stored = await env.RAIN_KV.get("subscription", "json");
-  if (!stored) return; // まだ誰も登録していない
+  if (!stored) {
+    console.log("[DEBUG] subscriptionがKVに存在しません");
+    return; // まだ誰も登録していない
+  }
 
   const { subscription, latitude, longitude } = stored;
+  console.log(`[DEBUG] 緯度経度: ${latitude}, ${longitude}`);
 
   // weather_code も併せて取得する
   const apiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=precipitation_probability,weather_code&timezone=auto`;
+  console.log(`[DEBUG] APIリクエスト: ${apiUrl}`);
 
   let data;
   try {
     const res = await fetch(apiUrl);
-    if (!res.ok) return;
+    console.log(`[DEBUG] APIレスポンスステータス: ${res.status}`);
+    if (!res.ok) {
+      const text = await res.text();
+      console.log(`[DEBUG] APIエラー本文: ${text}`);
+      return;
+    }
     data = await res.json();
   } catch (e) {
-    console.error("Open-Meteo取得エラー:", e);
+    console.error("[DEBUG] Open-Meteo取得エラー:", e.message, e.stack);
     return;
   }
 
-  if (!data.hourly || !data.hourly.time || !data.hourly.precipitation_probability) return;
+  if (!data.hourly || !data.hourly.time || !data.hourly.precipitation_probability) {
+    console.log("[DEBUG] hourlyデータが不正:", JSON.stringify(data).slice(0, 300));
+    return;
+  }
+
+  console.log(`[DEBUG] hourly件数: ${data.hourly.time.length}`);
 
   const times = data.hourly.time.map((t) => new Date(t).getTime());
   const probs = data.hourly.precipitation_probability;
@@ -124,7 +139,9 @@ async function checkRainAndNotify(env) {
   }
 
   const currentProb = interpolateProb(now);
+  const currentCode = nearestCode(now);
   const isRainingNow = isRainingAt(now);
+  console.log(`[DEBUG] 現在の確率: ${currentProb}%, 天気コード: ${currentCode}, isRainingNow: ${isRainingNow}`);
 
   let minutesAhead = null;
   if (!isRainingNow) {
@@ -135,6 +152,7 @@ async function checkRainAndNotify(env) {
       }
     }
   }
+  console.log(`[DEBUG] minutesAhead: ${minutesAhead}`);
 
   const stateRaw = await env.RAIN_KV.get("alert_state", "json");
   const state = stateRaw || { startedAlerted: false, imminentAlerted: false };
@@ -161,9 +179,15 @@ async function checkRainAndNotify(env) {
     state.imminentAlerted = false;
   }
 
+  console.log(`[DEBUG] state保存前: ${JSON.stringify(state)}`);
   await env.RAIN_KV.put("alert_state", JSON.stringify(state));
 
-  if (!title) return; // 送るものがなければ終了
+  if (!title) {
+    console.log("[DEBUG] 送信するタイトルなし（通知条件を満たしていない）");
+    return; // 送るものがなければ終了
+  }
+
+  console.log(`[DEBUG] 通知送信開始: ${title} / ${body}`);
 
   try {
     const { endpoint, headers, body: pushBody } = await buildPushHTTPRequest({
@@ -177,12 +201,17 @@ async function checkRainAndNotify(env) {
     });
 
     const pushRes = await fetch(endpoint, { method: "POST", headers, body: pushBody });
+    console.log(`[DEBUG] push送信結果ステータス: ${pushRes.status}`);
+    if (!pushRes.ok) {
+      const pushErrText = await pushRes.text();
+      console.log(`[DEBUG] push送信エラー本文: ${pushErrText}`);
+    }
 
     // 購読が失効していたら掃除しておく
     if (pushRes.status === 404 || pushRes.status === 410) {
       await env.RAIN_KV.delete("subscription");
     }
   } catch (e) {
-    console.error("push送信エラー:", e);
+    console.error("[DEBUG] push送信例外:", e.message, e.stack);
   }
 }
