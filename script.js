@@ -180,6 +180,18 @@ function weatherCodeToText(code) {
     return "❓ 不明";
 }
 
+// 天気コードが「雨（雪ではない）」を示すかどうか
+// weather_codeそのものが「今、雨が降っている」ことを示している場合、
+// 降水確率のしきい値に関係なく雨判定とするために使用する
+function isRainCode(code) {
+    if (code === null || code === undefined) return false;
+    if (code >= 51 && code <= 57) return true; // 弱い雨
+    if (code >= 61 && code <= 67) return true; // 雨
+    if (code === 80 || code === 81 || code === 82) return true; // にわか雨
+    if (code >= 95) return true; // 雷雨
+    return false;
+}
+
 // 時間別アイコン（雪と雨を区別）
 function hourlyIcon(code, prob) {
     if (code >= 71 && code <= 77) return "🌨";
@@ -224,6 +236,7 @@ async function updateWeather() {
         const times = data.hourly.time;
         const rain = data.hourly.precipitation_probability;
         const codes = data.hourly.weather_code;
+        const currentWeatherCode = data.current.weather_code;
 
         if (countdownInterval) clearInterval(countdownInterval);
 
@@ -234,7 +247,9 @@ async function updateWeather() {
                 document.getElementById("rain").textContent = "現在の降水確率：" + Math.round(currentProb) + "%";
             }
 
-            let info = analyzeRainTimeline(now, times, rain);
+            // 「今まさに雨が降っているか」は現在の天気コードも判定材料にする。
+            // 降水確率がしきい値未満でも、天気コードが雨を示していれば雨扱いにする。
+            let info = analyzeRainTimeline(now, times, rain, codes, currentWeatherCode);
 
             const alertEl = document.getElementById("rainAlert");
             const timeEl = document.getElementById("rainTime");
@@ -344,9 +359,29 @@ function getInterpolatedRainProbability(targetDate, times, rain) {
     return 0;
 }
 
+// 指定した時刻に最も近い（かつそれ以前の）時間帯の天気コードを取得する。
+// 降水確率と違ってweather_codeは補間せず、直前の時間帯の値をそのまま使う。
+function getNearestWeatherCode(targetDate, times, codes) {
+    if (!codes || times.length === 0) return null;
+    const targetMs = targetDate.getTime();
+
+    let nearestIndex = 0;
+    for (let i = 0; i < times.length; i++) {
+        const tMs = new Date(times[i]).getTime();
+        if (tMs <= targetMs) {
+            nearestIndex = i;
+        } else {
+            break;
+        }
+    }
+    return codes[nearestIndex];
+}
+
 // 「何分前から雨」「あと何分で雨」を、APIが持つデータの範囲いっぱいまで
 // 1分刻みで前後に探索する（固定60分キャップを廃止）
-function analyzeRainTimeline(now, times, rain) {
+// codes / currentWeatherCode を渡すことで、降水確率だけでなく
+// 天気コード自体が雨を示している場合も「雨が降っている」と判定する
+function analyzeRainTimeline(now, times, rain, codes, currentWeatherCode) {
     if (times.length === 0) {
         return { isRainingNow: false, upcomingRain: false, minutes: 0, probability: 0 };
     }
@@ -357,14 +392,21 @@ function analyzeRainTimeline(now, times, rain) {
 
     const currentProb = getInterpolatedRainProbability(now, times, rain);
 
-    if (currentProb >= RAIN_THRESHOLD) {
+    // 降水確率がしきい値以上、または現在の天気コード自体が雨を示していれば「雨が降っている」
+    const isRainingByProb = currentProb >= RAIN_THRESHOLD;
+    const isRainingByCode = isRainCode(currentWeatherCode);
+
+    if (isRainingByProb || isRainingByCode) {
         // データの開始時刻まで、1分ずつ遡って雨が続いている範囲を探す
+        // （確率・天気コードのどちらかが雨を示している間は「降り続けている」とみなす）
         let minutesAgo = 0;
         while (true) {
             const checkMs = nowMs - (minutesAgo + 1) * 60000;
             if (checkMs < dataStartMs) break;
-            const p = getInterpolatedRainProbability(new Date(checkMs), times, rain);
-            if (p < RAIN_THRESHOLD) break;
+            const checkDate = new Date(checkMs);
+            const p = getInterpolatedRainProbability(checkDate, times, rain);
+            const c = getNearestWeatherCode(checkDate, times, codes);
+            if (p < RAIN_THRESHOLD && !isRainCode(c)) break;
             minutesAgo++;
         }
         return {
@@ -387,11 +429,14 @@ function analyzeRainTimeline(now, times, rain) {
                 minutesAhead = null; // 2時間以内には見つからず
                 break;
             }
-            const p = getInterpolatedRainProbability(new Date(checkMs), times, rain);
-            if (p >= RAIN_THRESHOLD) break;
+            const checkDate = new Date(checkMs);
+            const p = getInterpolatedRainProbability(checkDate, times, rain);
+            const c = getNearestWeatherCode(checkDate, times, codes);
+            if (p >= RAIN_THRESHOLD || isRainCode(c)) break;
         }
         if (minutesAhead !== null) {
-            const futureProb = getInterpolatedRainProbability(new Date(nowMs + minutesAhead * 60000), times, rain);
+            const futureDate = new Date(nowMs + minutesAhead * 60000);
+            const futureProb = getInterpolatedRainProbability(futureDate, times, rain);
             return {
                 isRainingNow: false,
                 upcomingRain: true,
